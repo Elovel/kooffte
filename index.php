@@ -1012,7 +1012,7 @@ $c++;
 try {
 yield $this->channels->inviteToChannel( [ 'channel' => $gpid, 'users' => [ "$id" ] ] );
 $add++;
-} catch ( danog\ MadelineProto\ RPCErrorException $e ) {
+} catch (danog\MadelineProto\RPCErrorException $e ) {
 if ( $e->getMessage() == "PEER_FLOOD" ) {
 yield $this->messages->sendMessage( [ 'peer' => $chatID, 'message' => "⛔ محـدود شـده ایـد" ] );
 break;
@@ -1058,17 +1058,6 @@ $settings = [
 'peer' => [
 'full_fetch' => false,
 'cache_all_peers_on_startup' => false,
-],
-'db'=> [
-'type'  => 'mysql',
-'mysql' => [
-'host' => 'localhost',
-'port' => '3306',
-'user' => 'xxxxxx',
-'password' => 'xxxxxxx',
-'database' => 'xxxxxxxx',
-'max_connections' => '1',
-]
 ]
 ];
 $Zeus = new \danog\MadelineProto\API('Zeus.Madeline', $settings);
