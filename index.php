@@ -13,7 +13,6 @@ include 'madeline.php';
 
 use \danog\MadelineProto\API;
 use \danog\MadelineProto\EventHandler;
-require 'SimpleImage.php';
 class XHandler extends EventHandler
 {
 const Admins = [740910481];
