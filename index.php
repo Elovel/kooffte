@@ -1,112 +1,124 @@
-<?php
+<?php declare(strict_types=1);
 
-error_reporting(E_ALL);
-ini_set('display_errors','1');
-ini_set('memory_limit' , '-1');
-ini_set('max_execution_time','0');
-ini_set('display_startup_errors','1');
 
-if (!file_exists('madeline.php')) {
-copy('https://phar.madelineproto.xyz/madeline.php', 'madeline.php');
+use danog\MadelineProto\API;
+use danog\MadelineProto\Broadcast\Progress;
+use danog\MadelineProto\Broadcast\Status;
+use danog\MadelineProto\EventHandler\Attributes\Handler;
+use danog\MadelineProto\EventHandler\Filter\FilterCommand;
+use danog\MadelineProto\EventHandler\Message;
+use danog\MadelineProto\EventHandler\Message\PrivateMessage;
+use danog\MadelineProto\EventHandler\SimpleFilter\FromAdmin;
+use danog\MadelineProto\EventHandler\SimpleFilter\Incoming;
+use danog\MadelineProto\Logger;
+use danog\MadelineProto\ParseMode;
+use danog\MadelineProto\Settings;
+use danog\MadelineProto\Settings\Database\Mysql;
+use danog\MadelineProto\SimpleEventHandler;
+
+use function Amp\Socket\SocketAddress\fromString;
+
+
+if (class_exists(API::class)) {
+
+} elseif (file_exists('vendor/autoload.php')) {
+    require_once 'vendor/autoload.php';
+} else {
+
+    if (!file_exists('madeline.php')) {
+        copy('https://phar.madelineproto.xyz/madeline.php', 'madeline.php');
+    }
+    require_once 'madeline.php';
 }
-include 'madeline.php';
-
-use \danog\MadelineProto\API;
-use \danog\MadelineProto\EventHandler;
-class XHandler extends EventHandler
+class MyEventHandler extends SimpleEventHandler
 {
-const Admins = [740910481];
-const Report = 'hrlot';
-
-public function getReportPeers()
-{
-return [self::Report];
-}
+    public const ADMIN = "hrlot"; // !!! Change this to your username !!!
 
 
-public function onUpdateNewChannelMessage($update)
-{
-yield $this->onUpdateNewMessage($update);
+    
+    public function getReportPeers()
+    {
+        return [self::ADMIN];
+    }
+    /**
+     * Initialization logic.
+     */
+    public function onStart(): void
+    {
+        $this->logger("The bot was started!");
+
+        $this->sendMessageToAdmins("The bot was started!");
+    }
+
+    #[Handler]
+    public function handleMessage(Incoming&PrivateMessage $message): void
+    {
+
+        if ($message->media) {
+            $message->addReaction('👌');
+            $message->reply("✅️ لینک دانلود ساخته شد:\n\n".$message->media->getDownloadLink()."\n⚠️ لینک دانلود فیلتر نیست");
+        }
+    }
+
+
+    #[FilterCommand('broadcast')]
+    public function broadcastCommand(Message & FromAdmin $message): void
+    {
+        // We can broadcast messages to all users with /broadcast
+        if (!$message->replyToMsgId) {
+            $message->reply("You should reply to the message you want to broadcast.");
+            return;
+        }
+        $this->broadcastForwardMessages(
+            from_peer: $message->senderId,
+            message_ids: [$message->replyToMsgId],
+            drop_author: true,
+            pin: true,
+        );
+    }
+
+    private int $lastLog = 0;
+
+    #[Handler]
+    public function handleBroadcastProgress(Progress $progress): void
+    {
+        if (time() - $this->lastLog > 5 || $progress->status === Status::FINISHED) {
+            $this->lastLog = time();
+            $this->sendMessageToAdmins((string) $progress);
+        }
+    }
+
+
+
+
+
+
+    #[FilterCommand('start')]
+    public function responder(Message $message): void
+    {
+        $x = $this->getInfo($message->senderId); 
+        $name = $x['User']['first_name'];
+        $message->addReaction('👌');
+        $message->reply("👋Hi {$name}\n Send your media here");
+        
+    }
+
+    #[FilterCommand('reboot')]
+    public function reboot(Message & FromAdmin $message): void
+    {
+      $message->reply("ok");
+      $this->restart();
+
+    }
+
+
 }
 
-public function onUpdateNewMessage($update)
-{
-if (time() - $update['message']['date'] > 2) {
-return;
-}
-try {
-$msgOrig = $update['message']['message']?? null;
-$messageId = $update['message']['id']?? 0;
-$fromId= $update['message']['from_id']['user_id']?? 0;
-$replyToId = $update['message']['reply_to']['reply_to_msg_id']?? 0;
-$peer= yield $this->getID($update);
+$settings = new Settings;
+$settings->getLogger()->setLevel(Logger::LEVEL_ULTRA_VERBOSE);
 
-if((in_array($fromId, self::Admins))) {
-if(preg_match('/^[\/\#\!\.]?(ping|ربات)$/si', $msgOrig)) {
-yield $this->messages->sendMessage([
-'peer'=> $peer,
-'message' => 'Pong !',
-'reply_to_msg_id' => $messageId
-]);
-}
-elseif (preg_match('/^[\/](run)\s?(.*)$/usi', $msgOrig, $match)) {
-$match[2] = "return (function () use 
-(&\$update){
-{$match[2]}
-}
-)();";
 
-ob_start();
-try {
-yield eval($match[2]);
-$res = ob_get_contents();
-yield $this->messages->sendMessage([
-'peer'=> $peer,
-'message' => empty($res) ? 'No Result...':$res
-]);
-} catch (\Throwable $e) {
-yield $this->messages->sendMessage([
-'peer'=> $peer,
-'message' => $e->getMessage()
-]);
-}
-ob_end_clean();
-}
-elseif (preg_match('/^[\/\#\!]?(restart|ریستارت)$/si',$msgOrig)){
-yield $this->messages->sendMessage([
-'peer'=> $peer,
-'message' => 'Restarted ...',
-'reply_to_msg_id' => $messageId
-]);
-$this->restart();
-}
-elseif(preg_match('/^[\/\#\!\.]?(status|وضعیت|وضع|مصرف|usage)$/si', $msgOrig)){
-$answer = 'Memory Usage : ' . round(memory_get_peak_usage(true) / 1021 / 1024, 2) . ' MB';
-yield $this->messages->sendMessage([
-'peer'=> $peer,
-'message' => $answer,
-'reply_to_msg_id' => $messageId
-]);
-}
-}
-} catch (\Throwable $e){
-$this->report("Surfaced: $e");
-}
-}
-}
-$settings = [
-'serialization' => [
-'cleanup_before_serialization' => true,
-],
-'logger' => [
-'max_size' => 1*1024*1024,
-],
-'peer' => [
-'full_fetch' => false,
-'cache_all_peers_on_startup' => false,
-]
-];
+#$settings->setDb((new Mysql)->setDatabase('feedozer_hl')->setUsername('feedozer_hl')->setPassword('feedozer_hl'));
 
-$bot = new \danog\MadelineProto\API('X.session', $settings);
-$bot->startAndLoop(XHandler::class);
-?>
+
+MyEventHandler::startAndLoopBot('bot.madeline', '8065622638:AAHCzKEvDWVNecDvsg0TcFAse6gquTfN2Cw', $settings);
